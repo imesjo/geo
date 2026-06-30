@@ -2,28 +2,31 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Geolocation JSON Escape Tracker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geolocation JSON Fast Tracker</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; }
-        #status { font-weight: bold; color: blue; margin-bottom: 10px; }
+        body { font-family: sans-serif; padding: 15px; margin: 0; background-color: #f5f5f5; }
+        #status { font-weight: bold; color: blue; margin-bottom: 10px; font-size: 14px; }
         #log { 
-            max-height: 500px; 
+            max-height: 70vh; 
             overflow-y: auto; 
             border: 1px solid #ccc; 
             padding: 10px; 
             font-family: monospace; 
             white-space: pre-wrap;
-            background-color: #f9f9f9;
+            background-color: #fff;
             word-break: break-all;
+            font-size: 11px;
+            border-radius: 4px;
         }
-        .location-item { margin-bottom: 5px; color: #333; }
+        .location-item { margin-bottom: 6px; color: #222; border-bottom: 1px solid #eee; padding-bottom: 4px; }
     </style>
 </head>
 <body>
 
-    <h2>실시간 위치 추적 (Escaped JSON Format)</h2>
-    <div id="status">위치 추적 준비 중...</div>
-    <h3>저장된 위치 목록 (<span id="count">0</span>/30)</h3>
+    <h3>실시간 위치 수집 (3초 주기)</h3>
+    <div id="status">위치 권한 확인 중...</div>
+    <div style="margin-bottom: 15px; font-weight: bold;">수집된 데이터 (<span id="count">0</span> / 30)</div>
     <div id="log"></div>
 
     <script>
@@ -33,17 +36,32 @@
         
         const uniqueLocations = new Set();
         const maxLocations = 30;
-        let watchId = null;
+        let trackingInterval = null;
+
+        // Geolocation 옵션: 최대한 높은 정확도 강제
+        const geoOptions = {
+            enableHighAccuracy: true,
+            timeout: 8000,
+            maximumAge: 0
+        };
 
         if (!navigator.geolocation) {
             statusDiv.textContent = "이 브라우저에서는 Geolocation을 지원하지 않습니다.";
         } else {
-            statusDiv.textContent = "위치 추적 중...";
-            watchId = navigator.geolocation.watchPosition(success, error, {
-                enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
-            });
+            statusDiv.textContent = "위치 수집 시작됨 (3초마다 갱신)...";
+            
+            // 최초 즉시 실행 후, 3초(3000ms)마다 주기적으로 현재 위치를 강제 요청
+            requestLocation();
+            trackingInterval = setInterval(requestLocation, 3000);
+        }
+
+        function requestLocation() {
+            if (uniqueLocations.size >= maxLocations) {
+                statusDiv.textContent = "목표 개수(30개)를 수집하여 완료되었습니다.";
+                clearInterval(trackingInterval);
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(success, error, geoOptions);
         }
 
         function success(position) {
@@ -51,24 +69,19 @@
             const longitude = position.coords.longitude;
             const accuracy = position.coords.accuracy;
 
-            const geoKey = `${latitude.toFixed(4)}_${longitude.toFixed(4)}`;
+            // 중복 기준을 소수점 6자리(약 11cm)로 높여 미세한 좌표 변동도 다 잡아내도록 수정
+            const geoKey = `${latitude.toFixed(6)}_${longitude.toFixed(6)}`;
 
-            if (uniqueLocations.size >= maxLocations) {
-                statusDiv.textContent = "목표 개수(30개)를 모두 수집하여 추적을 종료합니다.";
-                if (watchId) navigator.geolocation.clearWatch(watchId);
-                return;
-            }
-
-            if (!uniqueLocations.has(geoKey)) {
+            if (!uniqueLocations.has(geoKey) && uniqueLocations.size < maxLocations) {
                 uniqueLocations.add(geoKey);
                 
                 const currentIndex = uniqueLocations.size;
                 const titleStr = `F${String(currentIndex).padStart(2, '0')}`;
                 
-                // 큰따옴표 앞에 역슬래시(\)를 텍스트로 표현하기 위해 \\" 형식으로 처리
+                // 요청하신 포맷 (이스케이프 슬러시 포함)
                 const outputText = `{\\"title\\":\\"${titleStr}\\",\\"lat\\":${latitude},\\"long\\":${longitude},\\"timezoneId\\":\\"Asia/Seoul\\",\\"locale\\":\\"ko-KR\\",\\"accuracy\\":${accuracy}},`;
                 
-                // 화면 출력 생성
+                // 화면 및 콘솔 출력
                 const item = document.createElement('div');
                 item.className = 'location-item';
                 item.textContent = outputText;
@@ -83,7 +96,8 @@
 
         function error(err) {
             console.warn(`ERROR(${err.code}): ${err.message}`);
-            statusDiv.textContent = `위치 정보를 가져오는데 실패했습니다: ${err.message}`;
+            // 신호 불량 등으로 일시적인 실패가 나더라도 타이머는 계속 돌도록 유지합니다.
+            statusDiv.textContent = `최근 위치 수집 시도 결과: ${err.message} (재시도 중...)`;
         }
     </script>
 </body>

@@ -3,18 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Geolocation JSON Fast Tracker</title>
+    <title>Geolocation JSON Random Tracker</title>
     <style>
         body { font-family: sans-serif; padding: 15px; margin: 0; background-color: #f5f5f5; }
         #status { font-weight: bold; color: blue; margin-bottom: 10px; font-size: 14px; }
         .control-box { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
         .count-text { font-weight: bold; font-size: 15px; }
-        /* 모바일에서 누르기 편한 UI 스타일 버튼 */
         .copy-btn { 
             background-color: #4CAF50; 
             color: white; 
             border: none; 
-            padding: 8px 16px; 
+            padding: 8px 20px; 
             font-size: 14px; 
             font-weight: bold; 
             border-radius: 4px; 
@@ -39,12 +38,12 @@
 </head>
 <body>
 
-    <h3>실시간 위치 수집 (1초 주기)</h3>
+    <h3>실시간 위치 수집 (1초 주기 -> 31개 랜덤 정렬)</h3>
     <div id="status">위치 권한 확인 중...</div>
     
     <div class="control-box">
-        <div class="count-text">수집된 데이터 (<span id="count">0</span> / 30)</div>
-        <button class="copy-btn" onclick="copyToClipboard()">전체 복사</button>
+        <div class="count-text">수집된 데이터 (<span id="count">0</span> / 31)</div>
+        <button class="copy-btn" onclick="copyToClipboard()">[복사]</button>
     </div>
     
     <div id="log"></div>
@@ -55,9 +54,9 @@
         const countSpan = document.getElementById('count');
         
         const uniqueLocations = new Set();
-        // 전체 복사 기능을 위해 생성된 텍스트 스트링을 순서대로 담아둘 배열
-        const collectedTextArray = []; 
-        const maxLocations = 30;
+        // 원본 객체 데이터를 순서대로 담아둘 배열
+        const collectedDataArray = []; 
+        const maxLocations = 31; // 31개로 변경
         let trackingInterval = null;
 
         const geoOptions = {
@@ -69,17 +68,13 @@
         if (!navigator.geolocation) {
             statusDiv.textContent = "이 브라우저에서는 Geolocation을 지원하지 않습니다.";
         } else {
-            statusDiv.textContent = "위치 수집 시작됨 (1초마다 갱신)...";
-            
+            statusDiv.textContent = "위치 수집 중 (31개가 채워지면 자동으로 랜덤 정렬됩니다)...";
             requestLocation();
-            // 요청하신 1초(1000ms) 주기로 타이머 설정
             trackingInterval = setInterval(requestLocation, 1000);
         }
 
         function requestLocation() {
             if (uniqueLocations.size >= maxLocations) {
-                statusDiv.textContent = "목표 개수(30개)를 수집하여 완료되었습니다.";
-                clearInterval(trackingInterval);
                 return;
             }
             navigator.geolocation.getCurrentPosition(success, error, geoOptions);
@@ -98,61 +93,90 @@
                 const currentIndex = uniqueLocations.size;
                 const titleStr = `F${String(currentIndex).padStart(2, '0')}`;
                 
-                const outputText = `{\\"title\\":\\"${titleStr}\\",\\"lat\\":${latitude},\\"long\\":${longitude},\\"timezoneId\\":\\"Asia/Seoul\\",\\"locale\\":\\"ko-KR\\",\\"accuracy\\":${accuracy}},`;
-                
-                // 복사용 배열에 추가
-                collectedTextArray.push(outputText);
+                // 추후 랜덤 셔플을 원활하게 하기 위해 객체 상태로 먼저 저장
+                collectedDataArray.push({
+                    title: titleStr,
+                    lat: latitude,
+                    long: longitude,
+                    accuracy: accuracy
+                });
 
-                // 화면 출력 생성
+                // 31개가 임시로 쌓이는 동안 실시간 상태 표시
+                countSpan.textContent = currentIndex;
+
+                // 31개가 모두 모였을 때
+                if (uniqueLocations.size === maxLocations) {
+                    clearInterval(trackingInterval);
+                    statusDiv.textContent = "31개 수집 완료! 랜덤 순서로 정렬하여 출력을 완료했습니다.";
+                    displayShuffledData();
+                }
+            }
+        }
+
+        // 배열을 무작위로 섞고 화면에 최종 출력하는 함수
+        function displayShuffledData() {
+            logDiv.innerHTML = ''; // 기존 임시 메시지나 출력 비우기
+
+            // Fisher-Yates Shuffle 알고리즘으로 무작위로 섞기
+            for (let i = collectedDataArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [collectedDataArray[i], collectedDataArray[j]] = [collectedDataArray[j], collectedDataArray[i]];
+            }
+
+            // 섞인 데이터를 기반으로 양식에 맞춰 출력 생성
+            collectedDataArray.forEach(data => {
+                const outputText = `{\\"title\\":\\"${data.title}\\",\\"lat\\":${data.lat},\\"long\\":${data.long},\\"timezoneId\\":\\"Asia/Seoul\\",\\"locale\\":\\"ko-KR\\",\\"accuracy\\":${data.accuracy}},`;
+                
                 const item = document.createElement('div');
                 item.className = 'location-item';
                 item.textContent = outputText;
                 logDiv.appendChild(item);
                 
                 console.log(outputText);
-                
-                logDiv.scrollTop = logDiv.scrollHeight;
-                countSpan.textContent = currentIndex;
-            }
+            });
         }
 
         function error(err) {
             console.warn(`ERROR(${err.code}): ${err.message}`);
-            statusDiv.textContent = `최근 위치 수집 시도 결과: ${err.message} (재시도 중...)`;
+            if (uniqueLocations.size < maxLocations) {
+                statusDiv.textContent = `최근 위치 수집 시도 결과: ${err.message} (재시도 중...)`;
+            }
         }
 
-        // 클립보드 복사 함수 (모바일 브라우저 호환성 반영)
+        // 클립보드 복사 함수 (줄 바꿈 제거 반영)
         function copyToClipboard() {
-            if (collectedTextArray.length === 0) {
-                alert("복사할 데이터가 없습니다.");
+            if (collectedDataArray.length < maxLocations) {
+                alert(`현재 수집 중입니다. 31개가 모두 모인 후 복사해 주세요. (현재: ${collectedDataArray.length}개)`);
                 return;
             }
             
-            // 배열에 저장된 문자열들을 줄바꿈(\n)으로 합쳐 하나의 텍스트로 만듦
-            const fullText = collectedTextArray.join('\n');
+            // 섞여 있는 배열을 바탕으로 문자열들을 줄 바꿈 없이 빈 문자열('')로 결합
+            const formattedStrings = collectedDataArray.map(data => {
+                return `{\\"title\\":\\"${data.title}\\",\\"lat\\":${data.lat},\\"long\\":${data.long},\\"timezoneId\\":\\"Asia/Seoul\\",\\"locale\\":\\"ko-KR\\",\\"accuracy\\":${data.accuracy}},`;
+            });
+            const singleLineText = formattedStrings.join('');
             
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(fullText).then(() => {
-                    alert("성공적으로 복사되었습니다!");
+                navigator.clipboard.writeText(singleLineText).then(() => {
+                    alert("성공적으로 복사되었습니다! (줄 바꿈 없음)");
                 }).catch(err => {
-                    fallbackCopy(fullText);
+                    fallbackCopy(singleLineText);
                 });
             } else {
-                fallbackCopy(fullText);
+                fallbackCopy(singleLineText);
             }
         }
 
-        // 구형 모바일 브라우저 환경을 위한 최후방 복사 방식
         function fallbackCopy(text) {
             const textArea = document.createElement("textarea");
             textArea.value = text;
-            textArea.style.position = "fixed";  // 화면 밖 배치
+            textArea.style.position = "fixed";
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
             try {
                 document.execCommand('copy');
-                alert("성공적으로 복사되었습니다!");
+                alert("성공적으로 복사되었습니다! (줄 바꿈 없음)");
             } catch (err) {
                 alert("복사에 실패했습니다. 수동으로 선택해 주세요.");
             }

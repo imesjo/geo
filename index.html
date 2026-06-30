@@ -7,8 +7,23 @@
     <style>
         body { font-family: sans-serif; padding: 15px; margin: 0; background-color: #f5f5f5; }
         #status { font-weight: bold; color: blue; margin-bottom: 10px; font-size: 14px; }
+        .control-box { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+        .count-text { font-weight: bold; font-size: 15px; }
+        /* 모바일에서 누르기 편한 UI 스타일 버튼 */
+        .copy-btn { 
+            background-color: #4CAF50; 
+            color: white; 
+            border: none; 
+            padding: 8px 16px; 
+            font-size: 14px; 
+            font-weight: bold; 
+            border-radius: 4px; 
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .copy-btn:active { background-color: #3e8e41; }
         #log { 
-            max-height: 70vh; 
+            max-height: 65vh; 
             overflow-y: auto; 
             border: 1px solid #ccc; 
             padding: 10px; 
@@ -24,9 +39,14 @@
 </head>
 <body>
 
-    <h3>실시간 위치 수집 (3초 주기)</h3>
+    <h3>실시간 위치 수집 (1초 주기)</h3>
     <div id="status">위치 권한 확인 중...</div>
-    <div style="margin-bottom: 15px; font-weight: bold;">수집된 데이터 (<span id="count">0</span> / 30)</div>
+    
+    <div class="control-box">
+        <div class="count-text">수집된 데이터 (<span id="count">0</span> / 30)</div>
+        <button class="copy-btn" onclick="copyToClipboard()">전체 복사</button>
+    </div>
+    
     <div id="log"></div>
 
     <script>
@@ -35,24 +55,25 @@
         const countSpan = document.getElementById('count');
         
         const uniqueLocations = new Set();
+        // 전체 복사 기능을 위해 생성된 텍스트 스트링을 순서대로 담아둘 배열
+        const collectedTextArray = []; 
         const maxLocations = 30;
         let trackingInterval = null;
 
-        // Geolocation 옵션: 최대한 높은 정확도 강제
         const geoOptions = {
             enableHighAccuracy: true,
-            timeout: 8000,
+            timeout: 9000,
             maximumAge: 0
         };
 
         if (!navigator.geolocation) {
             statusDiv.textContent = "이 브라우저에서는 Geolocation을 지원하지 않습니다.";
         } else {
-            statusDiv.textContent = "위치 수집 시작됨 (3초마다 갱신)...";
+            statusDiv.textContent = "위치 수집 시작됨 (1초마다 갱신)...";
             
-            // 최초 즉시 실행 후, 3초(3000ms)마다 주기적으로 현재 위치를 강제 요청
             requestLocation();
-            trackingInterval = setInterval(requestLocation, 3000);
+            // 요청하신 1초(1000ms) 주기로 타이머 설정
+            trackingInterval = setInterval(requestLocation, 1000);
         }
 
         function requestLocation() {
@@ -69,7 +90,6 @@
             const longitude = position.coords.longitude;
             const accuracy = position.coords.accuracy;
 
-            // 중복 기준을 소수점 6자리(약 11cm)로 높여 미세한 좌표 변동도 다 잡아내도록 수정
             const geoKey = `${latitude.toFixed(6)}_${longitude.toFixed(6)}`;
 
             if (!uniqueLocations.has(geoKey) && uniqueLocations.size < maxLocations) {
@@ -78,10 +98,12 @@
                 const currentIndex = uniqueLocations.size;
                 const titleStr = `F${String(currentIndex).padStart(2, '0')}`;
                 
-                // 요청하신 포맷 (이스케이프 슬러시 포함)
                 const outputText = `{\\"title\\":\\"${titleStr}\\",\\"lat\\":${latitude},\\"long\\":${longitude},\\"timezoneId\\":\\"Asia/Seoul\\",\\"locale\\":\\"ko-KR\\",\\"accuracy\\":${accuracy}},`;
                 
-                // 화면 및 콘솔 출력
+                // 복사용 배열에 추가
+                collectedTextArray.push(outputText);
+
+                // 화면 출력 생성
                 const item = document.createElement('div');
                 item.className = 'location-item';
                 item.textContent = outputText;
@@ -96,8 +118,45 @@
 
         function error(err) {
             console.warn(`ERROR(${err.code}): ${err.message}`);
-            // 신호 불량 등으로 일시적인 실패가 나더라도 타이머는 계속 돌도록 유지합니다.
             statusDiv.textContent = `최근 위치 수집 시도 결과: ${err.message} (재시도 중...)`;
+        }
+
+        // 클립보드 복사 함수 (모바일 브라우저 호환성 반영)
+        function copyToClipboard() {
+            if (collectedTextArray.length === 0) {
+                alert("복사할 데이터가 없습니다.");
+                return;
+            }
+            
+            // 배열에 저장된 문자열들을 줄바꿈(\n)으로 합쳐 하나의 텍스트로 만듦
+            const fullText = collectedTextArray.join('\n');
+            
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(fullText).then(() => {
+                    alert("성공적으로 복사되었습니다!");
+                }).catch(err => {
+                    fallbackCopy(fullText);
+                });
+            } else {
+                fallbackCopy(fullText);
+            }
+        }
+
+        // 구형 모바일 브라우저 환경을 위한 최후방 복사 방식
+        function fallbackCopy(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";  // 화면 밖 배치
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                alert("성공적으로 복사되었습니다!");
+            } catch (err) {
+                alert("복사에 실패했습니다. 수동으로 선택해 주세요.");
+            }
+            document.body.removeChild(textArea);
         }
     </script>
 </body>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Geolocation JSON Escape Tracker</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #status { font-weight: bold; color: blue; margin-bottom: 10px; }
+        #log { 
+            max-height: 500px; 
+            overflow-y: auto; 
+            border: 1px solid #ccc; 
+            padding: 10px; 
+            font-family: monospace; 
+            white-space: pre-wrap;
+            background-color: #f9f9f9;
+            word-break: break-all;
+        }
+        .location-item { margin-bottom: 5px; color: #333; }
+    </style>
+</head>
+<body>
+
+    <h2>실시간 위치 추적 (Escaped JSON Format)</h2>
+    <div id="status">위치 추적 준비 중...</div>
+    <h3>저장된 위치 목록 (<span id="count">0</span>/30)</h3>
+    <div id="log"></div>
+
+    <script>
+        const statusDiv = document.getElementById('status');
+        const logDiv = document.getElementById('log');
+        const countSpan = document.getElementById('count');
+        
+        const uniqueLocations = new Set();
+        const maxLocations = 30;
+        let watchId = null;
+
+        if (!navigator.geolocation) {
+            statusDiv.textContent = "이 브라우저에서는 Geolocation을 지원하지 않습니다.";
+        } else {
+            statusDiv.textContent = "위치 추적 중...";
+            watchId = navigator.geolocation.watchPosition(success, error, {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            });
+        }
+
+        function success(position) {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            const geoKey = `${latitude.toFixed(4)}_${longitude.toFixed(4)}`;
+
+            if (uniqueLocations.size >= maxLocations) {
+                statusDiv.textContent = "목표 개수(30개)를 모두 수집하여 추적을 종료합니다.";
+                if (watchId) navigator.geolocation.clearWatch(watchId);
+                return;
+            }
+
+            if (!uniqueLocations.has(geoKey)) {
+                uniqueLocations.add(geoKey);
+                
+                const currentIndex = uniqueLocations.size;
+                const titleStr = `F${String(currentIndex).padStart(2, '0')}`;
+                
+                // 큰따옴표 앞에 역슬래시(\)를 텍스트로 표현하기 위해 \\" 형식으로 처리
+                const outputText = `{\\"title\\":\\"${titleStr}\\",\\"lat\\":${latitude},\\"long\\":${longitude},\\"timezoneId\\":\\"Asia/Seoul\\",\\"locale\\":\\"ko-KR\\",\\"accuracy\\":${accuracy}},`;
+                
+                // 화면 출력 생성
+                const item = document.createElement('div');
+                item.className = 'location-item';
+                item.textContent = outputText;
+                logDiv.appendChild(item);
+                
+                console.log(outputText);
+                
+                logDiv.scrollTop = logDiv.scrollHeight;
+                countSpan.textContent = currentIndex;
+            }
+        }
+
+        function error(err) {
+            console.warn(`ERROR(${err.code}): ${err.message}`);
+            statusDiv.textContent = `위치 정보를 가져오는데 실패했습니다: ${err.message}`;
+        }
+    </script>
+</body>
+</html>
